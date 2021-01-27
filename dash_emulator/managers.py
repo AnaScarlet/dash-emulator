@@ -9,6 +9,7 @@ import sys
 import time
 import logging
 from typing import Optional, Dict
+import tempfile
 
 import aiohttp
 import matplotlib.pyplot as plt
@@ -169,6 +170,7 @@ class PlayManager(object):
         Create download_task_sessions for current segment_index
         :return:
         """
+        representations = []
         for adaptation_set in self.mpd.adaptationSets.values():
             representation_index = self.representation_indices[adaptation_set.id]
             representation = adaptation_set.representations[representation_index]
@@ -178,6 +180,8 @@ class PlayManager(object):
                                                                        representation.durations[segment_number],
                                                                        self.representation_indices
                                                                        )
+            representations.append((representation.urls[segment_number].split('/')[-1], representation))  # Tuple(str, mpd.Representation)
+
             if not representation.is_inited:
                 init_download_session = PlayManager.DownloadTaskSession(adaptation_set,
                                                                         representation.initialization_url,
@@ -187,6 +191,9 @@ class PlayManager(object):
                 self.download_task_sessions[adaptation_set.id] = init_download_session
             else:
                 self.download_task_sessions[adaptation_set.id] = segment_download_session
+        
+        if len(DownloadManager().current_representations) == 0:
+            DownloadManager().current_representations = representations
 
     def init(self, cfg, mpd: mpd.MPD):
         self.cfg = cfg  # type: config.Config
@@ -314,13 +321,14 @@ class PlayManager(object):
             await asyncio.sleep(0.5)
 
             loop = asyncio.get_event_loop()
-            if sys.version_info.minor < 7:
-                loop.add_signal_handler(
-                    signal.SIGINT, lambda: asyncio.ensure_future(ctrl_c_handler()))
-            else:
-                loop.add_signal_handler(
-                    signal.SIGINT, lambda: asyncio.create_task(ctrl_c_handler()))
-            print("You can press Ctrl-C to fastforward to the end of playback")
+            if not sys.platform.startswith('win32'):
+                if sys.version_info.minor < 7:
+                    loop.add_signal_handler(
+                        signal.SIGINT, lambda: asyncio.ensure_future(ctrl_c_handler()))
+                else:
+                    loop.add_signal_handler(
+                        signal.SIGINT, lambda: asyncio.create_task(ctrl_c_handler()))
+                print("You can press Ctrl-C to fastforward to the end of playback")
 
         events.EventBridge().add_listener(events.Events.DownloadEnd, download_end)
 
@@ -328,33 +336,33 @@ class PlayManager(object):
             log.info("Current Buffer Level: %.3f" % self.buffer_level)
 
         async def plot():
-            output_folder = self.cfg.args['output'] + \
-                "/figures/" or "./figures/"
+            output_folder = os.path.join(self.cfg.args['output'], "figures") if self.cfg.args['output'] else os.path.join(os.curdir, "figures")
             output_folder = pathlib.Path(output_folder).absolute()
             output_folder.mkdir(parents=True, exist_ok=True)
 
-            # Durations of segments
-            durations = DownloadManager().representation.durations
-            start_num = DownloadManager().representation.startNumber
-            fig = plt.figure()
-            plt.plot([i for i in range(start_num, len(durations))],
-                     durations[start_num:])
-            plt.xlabel("Segments")
-            plt.ylabel("Durations (sec)")
-            plt.title("Durations of each segment")
-            fig.savefig(str(output_folder / "segment-durations.pdf"))
-            plt.close()
+            num_representatinons = len(DownloadManager().current_representations)
+            for i in range(0, num_representatinons):
+                # Durations of segments
+                durations = DownloadManager().current_representations[i].durations
+                start_num = DownloadManager().current_representations[i].startNumber
+                fig = plt.figure()
+                plt.plot([i for i in range(start_num, len(durations))], durations[start_num:])
+                plt.xlabel("Segments")
+                plt.ylabel("Durations (sec)")
+                plt.title("Durations of each segment")
+                fig.savefig(os.path.join(output_folder, f"segment-durations{i}.pdf"))
+                plt.close()
 
-            # Download bandwidth of each segment
-            fig = plt.figure()
-            inds = [i for i in sorted(self._bandwidth_segmentwise.keys())]
-            bws = [self._bandwidth_segmentwise[i] for i in inds]
-            plt.plot(inds, bws)
-            plt.xlabel("Segments")
-            plt.ylabel("Bandwidth (bps)")
-            plt.title("Bandwidth of downloading each segment")
-            fig.savefig(str(output_folder / "segment-download-bandwidth.pdf"))
-            plt.close()
+                # Download bandwidth of each segment
+                fig = plt.figure()
+                inds = [i for i in sorted(self._bandwidth_segmentwise.keys())]
+                bws = [self._bandwidth_segmentwise[i] for i in inds]
+                plt.plot(inds, bws)
+                plt.xlabel("Segments")
+                plt.ylabel("Bandwidth (bps)")
+                plt.title("Bandwidth of downloading each segment")
+                fig.savefig(os.path.join(output_folder, "segment-download-bandwidth.pdf"))
+                plt.close()
 
         async def exit_program():
             print("Prepare to exit the program")
@@ -390,7 +398,7 @@ class PlayManager(object):
             # Reports
             seg_inds = [i for i in sorted(self._bandwidth_segmentwise.keys())]
             bws = [self._bandwidth_segmentwise[i] for i in seg_inds]
-            with open(output_path + '/results.csv', 'w') as f:
+            with open(os.path.join(output_path, 'results.csv'), 'w') as f:
                 writer = csv.DictWriter(f, fieldnames=["index", "filename", "init_name", "avg_bandwidth", "bitrate",
                                                        "width", "height", "mime", "codec"])
                 writer.writeheader()
@@ -409,32 +417,34 @@ class PlayManager(object):
                     writer.writerow(record)
 
                 # Merge segments into a complete one
-                tmp_output_path = '/tmp/playback-merge-%05d' % random.randint(
-                    1, 99999)
+                tmp_output_dir_name = '-playback-merge-%05d' % random.randint(1, 99999)
+                #with tempfile.TemporaryDirectory(suffix=tmp_output_dir_name) as tmp_output_path:
+                #os.mkdir("temp")
+                tmp_output_path = "temp"
+                log.info(f'Creating temporary directory: {tmp_output_path}')
                 os.mkdir(tmp_output_path)
-                segment_list_file = '%s/%s' % (tmp_output_path,
-                                               'segment-list.txt')
+                segment_list_file_name = 'segment-list.txt'
+                segment_list_file_path = os.path.join(tmp_output_path, segment_list_file_name)
+                log.info(f'Creating temporary file: {segment_list_file_path}')
                 target_output_path = "%s/%s" % (output_path, 'playback.mp4')
 
                 for (segment_name, representation), ind, bw in zip(DownloadManager().download_record, seg_inds, bws):
                     with open('%s/%s' % (output_path, 'merge-segment-%d.mp4' % ind), 'wb') as f:
-                        subprocess.call(['cat', "%s/%s" % (output_path, representation.init_filename),
-                                         "%s/%s" % (output_path, segment_name)], stdout=f)
-                    tmp_segment_path = '%s/segment-%d.mp4' % (
-                        tmp_output_path, ind)
+                        subprocess.call(['cat', f"{output_path}{os.path.sep}{representation.init_filename}",
+                                            f"{output_path}{os.path.sep}{segment_name}"], stdout=f)
+                    tmp_segment_path = f'{tmp_output_path}{os.path.sep}segment-{ind}.mp4'
                     subprocess.call(
-                        ['ffmpeg', '-i', "%s/%s" % (output_path, 'merge-segment-%d.mp4' % ind), '-vcodec', 'libx264',
+                        ['ffmpeg', '-i', f"{output_path}{os.path.sep}merge-segment-{ind}.mp4", '-vcodec', 'libx264',
                          '-vf', 'scale=1920:1080', tmp_segment_path], stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL)
-                    with open(segment_list_file, 'a') as f:
-                        subprocess.call(['echo', 'file %s' %
-                                         tmp_segment_path], stdout=f)
+                    with open(segment_list_file_path, 'a') as f:
+                        subprocess.call(['echo', f'file {tmp_segment_path}'], stdout=f)
                         f.flush()
 
             print(target_output_path)
             subprocess.call(
                 ['ffmpeg', '-f', 'concat', '-safe', '0', '-i',
-                    segment_list_file, '-c', 'copy', target_output_path],
+                    segment_list_file_path, '-c', 'copy', target_output_path],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         if self.cfg.args['output'] is not None:
@@ -462,6 +472,13 @@ class DownloadManager(object):
             self.tile_percentages_received = {} # type: Dict[str, List[float]]
             self.segment_buffer_levels = [] # type: List[float]
 
+            # from main because there was an error on line 398
+            # This property records all downloaded segments and its corresponding representation
+            # Each tuple in the list represents a segment
+            # Each tuple contains 2 elements: filename of the segment, corresponding representation
+            self.download_record = []  # type: List[Tuple[str, mpd.Representation]]
+            self.current_representations = []  # type: List[MPD.Representation]
+
     async def record_buffer_level(self, *args, **kwargs):
         print('recording buffer level')
         buffer_level = monitor.BufferMonitor().buffer
@@ -472,44 +489,53 @@ class DownloadManager(object):
         Dumps all playback statistics to the console. Called when playback is over.
         """
         print('dumping results')
-        console = logging.StreamHandler()
-        console.setLevel(level=logging.INFO)
+        consoleHandler = logging.StreamHandler(stream=open(os.path.join(self.cfg.args['output'], "dump_results.csv"), "w+", encoding="utf-8"))
+        consoleHandler.setLevel(level=logging.INFO)
         formatter = logger.CsvFormatter()
-        console.setFormatter(formatter)
+        logger.config()
+        consoleHandler.setFormatter(formatter)
+        csvLogger = logger.getLogger("csv")
+        csvLogger.addHandler(consoleHandler)
 
-        console.write('\n\n**Results**\n\n')
+        csvLogger.info('\n\n**Results**\n\n')
+
+        csvLogger.info("Download record:")
+        for r in DownloadManager().download_record:
+            csvLogger.info(f"Representation: \t {r[0]} \t id: {r[1].id} \t urls: {r[1].urls}")
 
         # logging 'percentage downloaded' statistics for all tile-segments
-        console.write('Percentage of bytes received for each tile:\n')
+        csvLogger.info('Percentage of bytes received for each tile:\n')
         segment_index = 0
         num_segments = len(self.segment_buffer_levels)
+        csvLogger.debug(f'Number of segments \t {num_segments}')
         num_tiles = len(self.tile_download_times)
         tile_percent_sums = num_tiles * [0.0]
-        console.write('segment_index \t ')
+        csvLogger.info(f'segment_index')
         for i in range(num_tiles):
-            console.write(f'Tile #{i}\t')
-        console.write(' \t Overall\n')
+            csvLogger.info(f'Tile #{i}\t')
+        csvLogger.info(' \t Overall\n')
         
         while segment_index < num_segments:
-            console.write(f'{segment_index} \t \t ')
+            csvLogger.info(f'{segment_index} \t \t ')
             sum_of_percents = 0
             for i in range(num_tiles):
                 percentage = self.tile_percentages_received[str(i)][segment_index]
                 tile_percent_sums[i] += percentage
                 sum_of_percents += percentage
-                console.write(f'{percentage},\t')
+                csvLogger.info(f'{percentage},\t')
             # write the average
             average = float(sum_of_percents / num_tiles)
-            console.write(f' \t \t {average}\n')
+            csvLogger.info(f' \t \t {average}\n')
+            segment_index += 1
         # finishing with overall averages
-        console.write('Average\t')
+        csvLogger.info('Average\t')
         cum_sum = 0
         for i in range(num_tiles):
             average = float(tile_percent_sums[i] / num_segments)
             cum_sum += average
-            console.write(f'{average},\t')
+            csvLogger.info(f'{average},\t')
         overall_average = float(cum_sum / num_tiles)
-        console.write(f'\t\t {overall_average}\n')
+        csvLogger.info(f'\t\t {overall_average}\n')
 
     async def download(self, url, download_progress_monitor) -> None:
         """
@@ -521,7 +547,7 @@ class DownloadManager(object):
             async with session.get(url) as resp:
                 output = self.cfg.args['output']
                 if output is not None:
-                    f = open(output + '/' + url.split('/')[-1], 'wb')
+                    f = open(output + os.path.sep + url.split('/')[-1], 'wb')
                 download_progress_monitor.segment_length = int(resp.headers["Content-Length"])
                 while True:
                     chunk = await resp.content.read(self.cfg.chunk_size)
@@ -605,6 +631,13 @@ class DownloadManager(object):
                 loop = asyncio.get_event_loop()
                 monitor_task = loop.create_task(
                     download_progress_monitor.start())
+
+            # Add segment to download record
+            self.download_record.extend(self.current_representations)
+
+            # print("Updated Download record:")
+            # for r in self.download_record:
+            #     print(r[0], r[1].tag, r[1].attrib)
 
             try:
                 await task

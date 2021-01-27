@@ -1,9 +1,11 @@
 import logging
+from io import StringIO
+import csv
 
 class CsvFormatter(logging.Formatter):
     def __init__(self):
         super().__init__()
-        self.output = io.StringIO()
+        self.output = StringIO()
         self.writer = csv.writer(self.output, quoting=csv.QUOTE_ALL)
 
     def format(self, record):

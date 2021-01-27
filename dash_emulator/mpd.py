@@ -61,8 +61,12 @@ class Representation(object):
         return self._mime
 
     def parse(self, tree):
+        print("\tRepresentation:")
+        print("\t", tree.tag, tree.attrib)
         base = urlparse(self._adapatationSet.mpd.link)
         basepath = os.path.dirname(base.path)
+        print("\tRepresentation url = " + self._adapatationSet.mpd.link)
+        print("\tBasepath url = " + basepath)
 
         self._id = tree.attrib['id']
         self._mime = tree.attrib['mimeType']
@@ -76,7 +80,7 @@ class Representation(object):
         segmentTemplate = tree.find("{%s}SegmentTemplate" % self._adapatationSet.mpd.namespace)
         self.initialization_url = segmentTemplate.attrib["initialization"].replace("$RepresentationID$",
                                                                                    str(self.id))
-        self.initialization_url = base._replace(path=os.path.join(basepath, self.initialization_url)).geturl()
+        self.initialization_url = base._replace(path=f'{basepath}/{self.initialization_url}').geturl()
         self.media = segmentTemplate.attrib['media']
         self.startNumber = int(segmentTemplate.attrib['startNumber'])
         self.timescale = int(segmentTemplate.attrib['timescale'])
@@ -91,7 +95,7 @@ class Representation(object):
             self.durations.append(float(segment.attrib['d']) / self.timescale)
             filename = re.sub(r"\$Number(\%\d+d)\$", r"\1", self.media.replace("$RepresentationID$", str(self.id)))
             filename = filename % num
-            self.urls.append(base._replace(path=os.path.join(basepath, filename)).geturl())
+            self.urls.append(base._replace(path=f'{basepath}/{filename}').geturl())
 
             if 'r' in segment.attrib:
                 for i in range(int(segment.attrib['r'])):
@@ -100,7 +104,7 @@ class Representation(object):
                     filename = re.sub(r"\$Number(\%\d+d)\$", r"\1",
                                       self.media.replace("$RepresentationID$", str(self.id)))
                     filename = filename % num
-                    self.urls.append(base._replace(path=os.path.join(basepath, filename)).geturl())
+                    self.urls.append(base._replace(path=f'{basepath}/{filename}').geturl())
 
             num += 1
 
