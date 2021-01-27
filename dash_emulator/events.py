@@ -1,10 +1,12 @@
 import asyncio
 import inspect
+import logging
 from typing import Callable, List, Union, Optional
 
 from dash_emulator import logger
 
-log = logger.getLogger(__name__)
+log = logging.getLogger(__name__)
+log.setLevel(logging.WARNING)  # Turn off info messages about which events got triggered
 
 
 class Event(object):

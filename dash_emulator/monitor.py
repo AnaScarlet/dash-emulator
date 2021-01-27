@@ -127,7 +127,7 @@ class DownloadProgressMonitor(object):
             # for 'init-stream.m4s' files
             return
 
-        print('BETA Algorithm: Start')
+        #print('BETA Algorithm: Start')
 
         bandwidth = -1
         if self.session.segment_index <= 0:
@@ -142,7 +142,7 @@ class DownloadProgressMonitor(object):
         timeout = length * 8 / bandwidth
         # if the segment is downloaded fully before timeout finishes, this task will be cancelled via DownloadManager.
         await asyncio.sleep(timeout)
-        print('BETA: Initial timeout reached')
+        #print('BETA: Initial timeout reached')
 
         buffer_level = BufferMonitor().buffer
         downloaded = self.downloaded

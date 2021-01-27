@@ -17,7 +17,8 @@ import matplotlib.pyplot as plt
 from dash_emulator import logger, events, abr, mpd, monitor, config
 from dash_emulator.monitor import DownloadProgressMonitor
 
-log = logger.getLogger(__name__)
+log = logging.getLogger(__name__)
+log.setLevel(logging.DEBUG)
 
 
 class PlayManager(object):
@@ -489,19 +490,22 @@ class DownloadManager(object):
         Dumps all playback statistics to the console. Called when playback is over.
         """
         print('dumping results')
-        consoleHandler = logging.StreamHandler(stream=open(os.path.join(self.cfg.args['output'], "dump_results.csv"), "w+", encoding="utf-8"))
-        consoleHandler.setLevel(level=logging.INFO)
-        formatter = logger.CsvFormatter()
-        logger.config()
-        consoleHandler.setFormatter(formatter)
         csvLogger = logger.getLogger("csv")
-        csvLogger.addHandler(consoleHandler)
+        if (self.cfg.args['output']):
+            for handler in csvLogger.handlers:
+                csvLogger.removeHandler(handler)
+            consoleHandler = logging.StreamHandler(stream=open(os.path.join(self.cfg.args['output'], "dump_results.csv"), "w+", encoding="utf-8"))
+            consoleHandler.setLevel(level=logging.INFO)
+            formatter = logger.CsvFormatter()
+            logger.config()
+            consoleHandler.setFormatter(formatter)
+            csvLogger.addHandler(consoleHandler)
 
         csvLogger.info('\n\n**Results**\n\n')
 
-        csvLogger.info("Download record:")
-        for r in DownloadManager().download_record:
-            csvLogger.info(f"Representation: \t {r[0]} \t id: {r[1].id} \t urls: {r[1].urls}")
+        #csvLogger.info("Download record:")
+        #for r in DownloadManager().download_record:
+        #    csvLogger.info(f"Representation: \t {r[0]} \t id: {r[1].id} \t urls: {r[1].urls}")
 
         # logging 'percentage downloaded' statistics for all tile-segments
         csvLogger.info('Percentage of bytes received for each tile:\n')
