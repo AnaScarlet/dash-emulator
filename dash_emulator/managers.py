@@ -492,14 +492,12 @@ class DownloadManager(object):
         print('dumping results')
         csvLogger = logger.getLogger("csv")
         if (self.cfg.args['output']):
-            for handler in csvLogger.handlers:
-                csvLogger.removeHandler(handler)
             consoleHandler = logging.StreamHandler(stream=open(os.path.join(self.cfg.args['output'], "dump_results.csv"), "w+", encoding="utf-8"))
             consoleHandler.setLevel(level=logging.INFO)
             formatter = logger.CsvFormatter()
-            logger.config()
             consoleHandler.setFormatter(formatter)
             csvLogger.addHandler(consoleHandler)
+            csvLogger.propagate = False
 
         csvLogger.info('\n\n**Results**\n\n')
 
