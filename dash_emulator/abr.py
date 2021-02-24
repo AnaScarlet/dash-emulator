@@ -86,20 +86,29 @@ class SRDDashVideoABR(ABRAlgorithm):
         if segment_index == 0:
             current_bw = cfg.max_initial_bitrate
         remaining_bw = current_bw
+        print("remaining bandwidth before = " + str(remaining_bw))
 
         QUALITIES = {'LOW': 0, 'MED': 1, 'HIGH': 2}
 
         fov_adaptation_set_indices = ['2', '3', '4'] # FOV and non-FOV adaptation sets are both fixed
         nonfov_adaptation_set_indices = ['0', '1', '5', '6', '7']
 
+        print("Number of adaptation sets passed in = " + str(len(adaptation_sets)))
+
         # assign lowest quality to non-fov tiles
         for i in nonfov_adaptation_set_indices:
             new_indices[i] = 0
             adaptation_set = adaptation_sets[i]
             remaining_bw -= adaptation_set.representations[new_indices[i]].bandwidth
+            print("remaining bandwidth = " + str(remaining_bw))
+
+        print("remaining bandwidth after = " + str(remaining_bw))
 
         effective_bw = remaining_bw * cfg.bandwidth_fraction
         estimated_fov_quality = effective_bw / len(fov_adaptation_set_indices)
+
+        print("effective bandwidth = " + str(effective_bw))
+        print("estimated fov quality = " + str(estimated_fov_quality))
 
         # assign highest possible quality to remaining tiles (depending on effective bw)
         for i in fov_adaptation_set_indices:

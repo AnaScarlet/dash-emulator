@@ -300,7 +300,7 @@ class PlayManager(object):
                                                    segment_index=self.segment_index, duration=session.duration)
                 
                 # Record avg bandwidth for previous segment download
-                avg_bandwidth = monitor.SpeedMonitor().get_speed()
+                avg_bandwidth = (monitor.SpeedMonitor().get_speed() - 3000000) * cfg.bandwidth_fraction / 3 # mimic ABR's bitrate estimate
                 log.debug(f"Adding to avg bandwidth {avg_bandwidth} at [{self.segment_index}]")
                 DownloadManager().download_record[self.segment_index] = [avg_bandwidth, DownloadManager().current_representations]
                 DownloadManager().current_representations = []  # Reset current representations for next round
