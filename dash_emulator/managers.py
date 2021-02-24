@@ -85,6 +85,9 @@ class PlayManager(object):
             # Current downloading segment index
             self.segment_index = 0
 
+            # List of stall data
+            self.stalls = []  # type: List[Tuple(start_segment_index, end_segment_index stall_duration)]
+
     def switch_state(self, state):
         if state == "READY" or state == PlayManager.State.READY:
             self.state = PlayManager.State.READY
@@ -246,12 +249,16 @@ class PlayManager(object):
             log.debug("Stall happened")
             self.switch_state("STALLING")
             before_stall = time.time()
+            before_stall_segment_index = self.segment_index
             while True:
                 await asyncio.sleep(self.cfg.update_interval)
                 if monitor.BufferMonitor().buffer - self.playback_time > self.mpd.minBufferTime:
                     break
-            log.debug("Stall ends, duration: %.3f" %
-                      (time.time() - before_stall))
+            
+            stall_duration = time.time() - before_stall
+            self.stalls.append( (before_stall_segment_index, self.segment_index, stall_duration) )
+            log.debug("Stall ends, duration: %.3f" % stall_duration)
+
             await events.EventBridge().trigger(events.Events.Play)
 
         events.EventBridge().add_listener(events.Events.Stall, stall)
@@ -408,7 +415,19 @@ class PlayManager(object):
             # Reports
             dr = DownloadManager().download_record
             with open(os.path.join(output_path, 'results.csv'), 'w') as f:
-                writer = csv.DictWriter(f, fieldnames=["segment_index", "avg_bandwidth", "filename", "id", "bitrate",
+                writer_stalls = csv.DictWriter(f, dialect='excel', fieldnames=["start_segment_index", "end_segment_index", "duration"])
+                writer_stalls.writeheader()
+
+                for stall_tuple in self.stalls:
+                    record_stalls = {
+                        "start_segment_index" : stall_tuple[0], 
+                        "end_segment_index" : stall_tuple[1],
+                        "duration" : stall_tuple[2]
+                    }
+                    writer_stalls.writerow(record_stalls)
+                writer_stalls.writerow({})
+
+                writer = csv.DictWriter(f, dialect='excel', fieldnames=["segment_index", "avg_bandwidth", "filename", "id", "bitrate",
                                                        "width", "height", "mime", "codec", "bandwidth_difference"])
                 writer.writeheader()
                 for ind in dr.keys():
