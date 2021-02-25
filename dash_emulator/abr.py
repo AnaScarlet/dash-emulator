@@ -1,4 +1,5 @@
 from typing import Optional, Dict
+import math
 
 from dash_emulator import logger, mpd, config, managers
 
@@ -90,17 +91,40 @@ class SRDDashVideoABR(ABRAlgorithm):
 
         QUALITIES = {'LOW': 0, 'MED': 1, 'HIGH': 2}
 
-        fov_adaptation_set_indices = ['2', '3', '4'] # FOV and non-FOV adaptation sets are both fixed
-        nonfov_adaptation_set_indices = ['0', '1', '5', '6', '7']
+        #print("Number of adaptation sets passed in = " + str(len(adaptation_sets)))
 
-        print("Number of adaptation sets passed in = " + str(len(adaptation_sets)))
+        num_tiles = len(adaptation_sets)   # Should always be even...
+        # Asssume tile grid is square i.e. num rows == num cols
+        num_tiles_per_row = math.isqrt(num_tiles)
+        median_row = math.floor(num_tiles_per_row / 2)   # Median row == median column (i.e. the median tile in any given row)
+        first_middle_row_index = median_row - 1
+        second_middle_row_index = median_row
+
+        # print(f"median_row = {median_row}")
+        # print(f"first_middle_row_index = {first_middle_row_index}")
+        # print(f"second_middle_row_index = {second_middle_row_index}")
+
+        fov_i1 = num_tiles_per_row * first_middle_row_index + median_row - 1
+        fov_i2 = num_tiles_per_row * first_middle_row_index + median_row
+        fov_i3 = num_tiles_per_row * second_middle_row_index + median_row - 1
+        fov_i4 = num_tiles_per_row * second_middle_row_index + median_row
+
+        fov_adaptation_set_indices = [str(fov_i1), str(fov_i2), str(fov_i3), str(fov_i4)]
+        #print(str(fov_adaptation_set_indices))
+
+        nonfov_adaptation_set_indices = []
+        for i in adaptation_sets.keys():
+            if str(i) not in fov_adaptation_set_indices:
+                nonfov_adaptation_set_indices.append(str(i))
+        #print(str(nonfov_adaptation_set_indices))
+
 
         # assign lowest quality to non-fov tiles
         for i in nonfov_adaptation_set_indices:
             new_indices[i] = 0
             adaptation_set = adaptation_sets[i]
             remaining_bw -= adaptation_set.representations[new_indices[i]].bandwidth
-            print("remaining bandwidth = " + str(remaining_bw))
+            #print("remaining bandwidth = " + str(remaining_bw))
 
         print("remaining bandwidth after = " + str(remaining_bw))
 

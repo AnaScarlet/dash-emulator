@@ -13,7 +13,7 @@ class Config(object):
         self.min_duration_to_retrain_after_discard_ms = 8000
 
         # Bandwidth fraction
-        self.bandwidth_fraction = 0.75
+        self.bandwidth_fraction = 0.85
 
         # averageSpeed = SMOOTHING_FACTOR * lastSpeed + (1-SMOOTHING_FACTOR) * averageSpeed;
         self.smoothing_factor = 0.5

@@ -74,7 +74,7 @@ class SpeedMonitor(object):
         log.info("Avg bandwidth: %d bps" % (self.avg_bandwidth * 8))
 
     def get_speed(self):
-        return self.avg_bandwidth
+        return (self.avg_bandwidth * 8) # in bits / second
 
 
 class BufferMonitor(object):

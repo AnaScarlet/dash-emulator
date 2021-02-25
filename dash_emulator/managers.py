@@ -300,7 +300,7 @@ class PlayManager(object):
                                                    segment_index=self.segment_index, duration=session.duration)
                 
                 # Record avg bandwidth for previous segment download
-                avg_bandwidth = (monitor.SpeedMonitor().get_speed() - 3000000) * cfg.bandwidth_fraction / 3 # mimic ABR's bitrate estimate
+                avg_bandwidth = monitor.SpeedMonitor().get_speed() # Total bandwidth used to download all tiles in bps
                 log.debug(f"Adding to avg bandwidth {avg_bandwidth} at [{self.segment_index}]")
                 DownloadManager().download_record[self.segment_index] = [avg_bandwidth, DownloadManager().current_representations]
                 DownloadManager().current_representations = []  # Reset current representations for next round
@@ -427,15 +427,21 @@ class PlayManager(object):
                     writer_stalls.writerow(record_stalls)
                 writer_stalls.writerow({})
 
-                writer = csv.DictWriter(f, dialect='excel', fieldnames=["segment_index", "avg_bandwidth", "filename", "id", "bitrate",
-                                                       "width", "height", "mime", "codec", "bandwidth_difference"])
+                writer = csv.DictWriter(f, dialect='excel', fieldnames=["segment_index", "total_avg_bandwidth", "avg_bandwidth_per_tile", 
+                                                        "ABR_avg_bandwidth_per_tile", "filename", "id", "bitrate",
+                                                        "width", "height", "mime", "codec", "bandwidth_difference"])
                 writer.writeheader()
                 for ind in dr.keys():
                     bws = dr[ind][0]
                     representation_tuples = dr[ind][1]
+
+                    avg_bandwidth_per_tile = bws / len(self.mpd.adaptationSets)
+                    ABR_avg_bandwidth_per_tile = avg_bandwidth_per_tile * self.cfg.bandwidth_fraction
                     record1 = {
                         "segment_index" : ind,
-                        "avg_bandwidth" : bws
+                        "total_avg_bandwidth" : bws,
+                        "avg_bandwidth_per_tile" : avg_bandwidth_per_tile,
+                        "ABR_avg_bandwidth_per_tile": ABR_avg_bandwidth_per_tile
                     }
                     writer.writerow(record1)
                     bws_sum = 0
@@ -456,8 +462,8 @@ class PlayManager(object):
                         }
                         writer.writerow(record2)
 
-                    theoretical_avg_bandwidth = bws_sum / bws_avg_counter
-                    bandwidth_difference = bws - theoretical_avg_bandwidth
+                    theoretical_avg_bandwidth = bws_sum / bws_avg_counter   # Per tile
+                    bandwidth_difference = ABR_avg_bandwidth_per_tile - theoretical_avg_bandwidth
                     record_avg = {
                         "bitrate" : theoretical_avg_bandwidth,
                         "bandwidth_difference" : bandwidth_difference
