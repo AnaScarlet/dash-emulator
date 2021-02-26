@@ -97,7 +97,46 @@ class SRDDashVideoABR(ABRAlgorithm):
         # Asssume tile grid is square i.e. num rows == num cols
         num_tiles_per_row = math.isqrt(num_tiles)
         median_row = math.floor(num_tiles_per_row / 2)   # Median row == median column (i.e. the median tile in any given row)
+        fov_adaptation_set_indices = self.simulate_Fov(median_row, num_tiles_per_row)
+        
+        log.debug(str(fov_adaptation_set_indices))
 
+        nonfov_adaptation_set_indices = []
+        for i in adaptation_sets.keys():
+            if str(i) not in fov_adaptation_set_indices:
+                nonfov_adaptation_set_indices.append(str(i))
+        log.debug(str(nonfov_adaptation_set_indices))
+
+        # assign lowest quality to non-fov tiles
+        log.debug("remaining bandwidth before = " + str(remaining_bw))
+        for i in nonfov_adaptation_set_indices:
+            new_indices[i] = 0
+            adaptation_set = adaptation_sets[i]
+            remaining_bw -= adaptation_set.representations[new_indices[i]].bandwidth
+            #print("remaining bandwidth = " + str(remaining_bw))
+
+        log.debug("remaining bandwidth after = " + str(remaining_bw))
+
+        effective_bw = remaining_bw * cfg.bandwidth_fraction
+        estimated_fov_quality = effective_bw / len(fov_adaptation_set_indices)
+
+        log.debug("effective bandwidth = " + str(effective_bw))
+        log.debug("estimated fov quality = " + str(estimated_fov_quality))
+
+        # assign highest possible quality to remaining tiles (depending on effective bw)
+        for i in fov_adaptation_set_indices:
+            adaptation_set = adaptation_sets[i]
+            if estimated_fov_quality > adaptation_set.representations[QUALITIES['HIGH']].bandwidth:
+                new_indices[i] = QUALITIES['HIGH']
+            elif estimated_fov_quality > adaptation_set.representations[QUALITIES['MED']].bandwidth:
+                new_indices[i] = QUALITIES['MED']
+            else:
+                new_indices[i] = QUALITIES['LOW']
+            remaining_bw -= adaptation_set.representations[new_indices[i]].bandwidth
+
+        return new_indices
+    
+    def simulate_Fov(self, median_row: int, num_tiles_per_row: int):
         # FOV is square and proportional to the total number of tiles
         # For example:
         #    8x8 tiles => 4x4 FOV
@@ -160,42 +199,8 @@ class SRDDashVideoABR(ABRAlgorithm):
         # fov_i4 = num_tiles_per_row * second_middle_row_index + median_row
 
         #fov_adaptation_set_indices = [str(fov_i1), str(fov_i2), str(fov_i3), str(fov_i4)]
-        log.debug(str(fov_adaptation_set_indices))
 
-        nonfov_adaptation_set_indices = []
-        for i in adaptation_sets.keys():
-            if str(i) not in fov_adaptation_set_indices:
-                nonfov_adaptation_set_indices.append(str(i))
-        log.debug(str(nonfov_adaptation_set_indices))
-
-        # assign lowest quality to non-fov tiles
-        log.debug("remaining bandwidth before = " + str(remaining_bw))
-        for i in nonfov_adaptation_set_indices:
-            new_indices[i] = 0
-            adaptation_set = adaptation_sets[i]
-            remaining_bw -= adaptation_set.representations[new_indices[i]].bandwidth
-            #print("remaining bandwidth = " + str(remaining_bw))
-
-        log.debug("remaining bandwidth after = " + str(remaining_bw))
-
-        effective_bw = remaining_bw * cfg.bandwidth_fraction
-        estimated_fov_quality = effective_bw / len(fov_adaptation_set_indices)
-
-        log.debug("effective bandwidth = " + str(effective_bw))
-        log.debug("estimated fov quality = " + str(estimated_fov_quality))
-
-        # assign highest possible quality to remaining tiles (depending on effective bw)
-        for i in fov_adaptation_set_indices:
-            adaptation_set = adaptation_sets[i]
-            if estimated_fov_quality > adaptation_set.representations[QUALITIES['HIGH']].bandwidth:
-                new_indices[i] = QUALITIES['HIGH']
-            elif estimated_fov_quality > adaptation_set.representations[QUALITIES['MED']].bandwidth:
-                new_indices[i] = QUALITIES['MED']
-            else:
-                new_indices[i] = QUALITIES['LOW']
-            remaining_bw -= adaptation_set.representations[new_indices[i]].bandwidth
-
-        return new_indices
+        return fov_adaptation_set_indices
 
 
 class ABRController(object):
