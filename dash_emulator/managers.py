@@ -88,6 +88,9 @@ class PlayManager(object):
             # List of stall data
             self.stalls = []  # type: List[Tuple(start_segment_index, end_segment_index stall_duration)]
 
+            # Buffer level data
+            self.buffer_level_data = []  # type: List[Tuple(start_segment_index, buffer_level)]
+
     def switch_state(self, state):
         if state == "READY" or state == PlayManager.State.READY:
             self.state = PlayManager.State.READY
@@ -123,6 +126,7 @@ class PlayManager(object):
     async def check_buffer_sufficient(self):
         while True:
             if self.buffer_level > 0:
+                self.buffer_level_data.append((self.segment_index, self.buffer_level / 1000))
                 log.info("Buffer level sufficient: %.1f seconds" %
                          (self.buffer_level / 1000))
                 await asyncio.sleep(min(1, self.buffer_level / 1000))
@@ -427,9 +431,22 @@ class PlayManager(object):
                     writer_stalls.writerow(record_stalls)
                 writer_stalls.writerow({})
 
+
+                writer_buffer_level = csv.DictWriter(f, dialect='excel', fieldnames=["segment_index", "buffer_level_seconds"])
+                writer_buffer_level.writeheader()
+
+                for buffer_tuple in self.buffer_level_data:
+                    record_buffer = {
+                        "segment_index" : buffer_tuple[0],
+                        "buffer_level_seconds" : buffer_tuple[1]
+                    }
+                    writer_buffer_level.writerow(record_buffer)
+                writer_buffer_level.writerow({})
+
+
                 writer = csv.DictWriter(f, dialect='excel', fieldnames=["segment_index", "total_avg_bandwidth", "avg_bandwidth_per_tile", 
-                                                        "ABR_avg_bandwidth_per_tile", "filename", "id", "bitrate",
-                                                        "width", "height", "mime", "codec", "bandwidth_difference"])
+                                        "ABR_avg_bandwidth_per_tile", "filename", "id", "bitrate",
+                                        "width", "height", "mime", "codec", "bandwidth_difference"])
                 writer.writeheader()
                 for ind in dr.keys():
                     bws = dr[ind][0]
