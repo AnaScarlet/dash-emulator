@@ -1,10 +1,11 @@
 from typing import Optional, Dict
 import math
+import logging
 
 from dash_emulator import logger, mpd, config, managers
 
-log = logger.getLogger(__name__)
-
+log = logging.getLogger(__name__)
+#log.setLevel(logging.DEBUG)
 
 class ABRAlgorithm(object):
     def __init__(self):
@@ -87,52 +88,101 @@ class SRDDashVideoABR(ABRAlgorithm):
         if segment_index == 0:
             current_bw = cfg.max_initial_bitrate
         remaining_bw = current_bw
-        print("remaining bandwidth before = " + str(remaining_bw))
 
         QUALITIES = {'LOW': 0, 'MED': 1, 'HIGH': 2}
 
         #print("Number of adaptation sets passed in = " + str(len(adaptation_sets)))
 
-        num_tiles = len(adaptation_sets)   # Should always be even...
+        num_tiles = len(adaptation_sets)   # Should be even...
         # Asssume tile grid is square i.e. num rows == num cols
         num_tiles_per_row = math.isqrt(num_tiles)
         median_row = math.floor(num_tiles_per_row / 2)   # Median row == median column (i.e. the median tile in any given row)
-        first_middle_row_index = median_row - 1
-        second_middle_row_index = median_row
+
+        # FOV is square and proportional to the total number of tiles
+        # For example:
+        #    8x8 tiles => 4x4 FOV
+        #    22x22 tiles => 10x10 FOV
+        fov_start_row = math.ceil(median_row / 2)
+        fov_start_column = fov_start_row
+        fov_start_indx = num_tiles_per_row * fov_start_row + fov_start_column
+        num_fov_rows = median_row - (median_row % 2)   # ensure num rows is even
+        log.debug(f"fov_start_row = {fov_start_row}")
+        log.debug(f"fov_start_indx = {fov_start_indx}")
+        log.debug(f"num_fov_rows = {num_fov_rows}")
+        
+        # DFS-like top-down (then bottom-up) tree geenration of indexes
+        def discover_fov_nodes_top_down(index, found):
+            found[f'{index}'] = index
+            if (len(found) < num_fov_rows):
+                left_index = index + num_tiles_per_row
+                right_index = index + 1
+
+                if (found.get(f'{left_index}') == None):
+                    discover_fov_nodes_top_down(left_index, found)
+                if (found.get(f'{right_index}') == None):
+                    discover_fov_nodes_top_down(right_index, found)
+        
+        def discover_fov_nodes_bottom_up(index, found):
+            found[f'{index}'] = index
+            if (len(found) < (num_fov_rows-1)):
+                left_index = index - num_tiles_per_row
+                right_index = index - 1
+
+                if (found.get(f'{left_index}') == None):
+                    discover_fov_nodes_bottom_up(left_index, found)
+                if (found.get(f'{right_index}') == None):
+                    discover_fov_nodes_bottom_up(right_index, found)
+
+        fov_adaptation_set_indices = []
+        fov_adaptation_set_indices_dict = {}
+        discover_fov_nodes_top_down(fov_start_indx, fov_adaptation_set_indices_dict)
+        fov_adaptation_set_indices.extend(fov_adaptation_set_indices_dict.keys())
+
+        fov_adaptation_set_indices_dict = {}
+        num_remaining_fov_rows = num_fov_rows-1
+        num_remaining_fov_cols = num_remaining_fov_rows
+        fov_end_indx = fov_start_indx + num_remaining_fov_cols + (num_remaining_fov_rows * num_tiles_per_row)
+        log.debug(f"fov_end_indx = {fov_end_indx}")
+        discover_fov_nodes_bottom_up(fov_end_indx, fov_adaptation_set_indices_dict)
+        fov_adaptation_set_indices.extend(fov_adaptation_set_indices_dict)
+        
+        # Assuming 2 by 2 FOV:
+        # first_middle_row_index = median_row - 1
+        # second_middle_row_index = median_row
 
         # print(f"median_row = {median_row}")
         # print(f"first_middle_row_index = {first_middle_row_index}")
         # print(f"second_middle_row_index = {second_middle_row_index}")
 
-        fov_i1 = num_tiles_per_row * first_middle_row_index + median_row - 1
-        fov_i2 = num_tiles_per_row * first_middle_row_index + median_row
-        fov_i3 = num_tiles_per_row * second_middle_row_index + median_row - 1
-        fov_i4 = num_tiles_per_row * second_middle_row_index + median_row
+        # fov_i1 = num_tiles_per_row * first_middle_row_index + median_row - 1
+        # fov_i2 = num_tiles_per_row * first_middle_row_index + median_row
+        # fov_i3 = num_tiles_per_row * second_middle_row_index + median_row - 1
+        # fov_i4 = num_tiles_per_row * second_middle_row_index + median_row
 
-        fov_adaptation_set_indices = [str(fov_i1), str(fov_i2), str(fov_i3), str(fov_i4)]
-        #print(str(fov_adaptation_set_indices))
+        #fov_adaptation_set_indices = [str(fov_i1), str(fov_i2), str(fov_i3), str(fov_i4)]
+        log.debug(str(fov_adaptation_set_indices))
 
         nonfov_adaptation_set_indices = []
         for i in adaptation_sets.keys():
             if str(i) not in fov_adaptation_set_indices:
                 nonfov_adaptation_set_indices.append(str(i))
-        #print(str(nonfov_adaptation_set_indices))
-
+        log.debug(str(nonfov_adaptation_set_indices))
 
         # assign lowest quality to non-fov tiles
+        log.debug("remaining bandwidth before = " + str(remaining_bw))
         for i in nonfov_adaptation_set_indices:
             new_indices[i] = 0
             adaptation_set = adaptation_sets[i]
             remaining_bw -= adaptation_set.representations[new_indices[i]].bandwidth
             #print("remaining bandwidth = " + str(remaining_bw))
 
-        print("remaining bandwidth after = " + str(remaining_bw))
+        log.debug("remaining bandwidth after = " + str(remaining_bw))
 
         effective_bw = remaining_bw * cfg.bandwidth_fraction
         estimated_fov_quality = effective_bw / len(fov_adaptation_set_indices)
 
-        print("effective bandwidth = " + str(effective_bw))
-        print("estimated fov quality = " + str(estimated_fov_quality))
+        log.debug("effective bandwidth = " + str(effective_bw))
+        log.debug("estimated fov quality = " + str(estimated_fov_quality))
 
         # assign highest possible quality to remaining tiles (depending on effective bw)
         for i in fov_adaptation_set_indices:
