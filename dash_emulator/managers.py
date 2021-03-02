@@ -446,7 +446,7 @@ class PlayManager(object):
 
                 writer = csv.DictWriter(f, dialect='excel', fieldnames=["segment_index", "total_avg_bandwidth", "avg_bandwidth_per_tile", 
                                         "ABR_avg_bandwidth_per_tile", "filename", "id", "bitrate",
-                                        "width", "height", "mime", "codec", "bandwidth_difference"])
+                                        "width", "height", "mime", "codec", "bitrate_tile_avg", "bandwidth_difference"])
                 writer.writeheader()
                 for ind in dr.keys():
                     bws = dr[ind][0]
@@ -482,7 +482,7 @@ class PlayManager(object):
                     theoretical_avg_bandwidth = bws_sum / bws_avg_counter   # Per tile
                     bandwidth_difference = ABR_avg_bandwidth_per_tile - theoretical_avg_bandwidth
                     record_avg = {
-                        "bitrate" : theoretical_avg_bandwidth,
+                        "bitrate_tile_avg" : theoretical_avg_bandwidth,
                         "bandwidth_difference" : bandwidth_difference
                     }
                     writer.writerow(record_avg)
